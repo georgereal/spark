@@ -1,29 +1,73 @@
 {
   "expo": {
-    "name": "DentalPracticeMobile",
-    "slug": "DentalPracticeMobile",
+    "name": "Spark",
+    "slug": "spark-dental",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
+          "splash": {
+            "image": "./assets/splash-icon.png",
+            "resizeMode": "contain",
+            "backgroundColor": "#FF6B35"
+          },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sparkdental.app",
+      "buildNumber": "1.0.0",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app needs access to camera to take photos of patients and documents.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to photo library to select images for patients and documents."
+      }
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true
+            "adaptiveIcon": {
+              "foregroundImage": "./assets/adaptive-icon.png",
+              "backgroundColor": "#FF6B35"
+            },
+      "package": "com.sparkdental.app",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Spark Dental to access your camera to take photos of patients and documents."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Spark Dental to access your photos to select images for patients and documents."
+        }
+      ],
+      [
+              "expo-notifications",
+              {
+                "icon": "./assets/notification-icon.png",
+                "color": "#FF6B35"
+              }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "your-project-id-here"
+      }
     }
   }
 }
