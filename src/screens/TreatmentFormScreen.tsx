@@ -17,8 +17,25 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { theme } from '../theme';
-import { Button, Card, FloatingActionButton } from '../components';
+import { Button, Card, FloatingActionButton, TreatmentPlanForm } from '../components';
 import api, { Treatment, Patient } from '../services/api';
+
+interface TreatmentPlan {
+  _id?: string;
+  treatmentPlanId?: string;
+  name: string;
+  description: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  totalCost: number;
+  totalMaterialCost: number;
+  costs: any[];
+  categoryItems: any[];
+  doctors: any[];
+  category: any;
+  notes: string;
+}
 
 interface TreatmentFormData {
   name: string;
@@ -31,6 +48,7 @@ interface TreatmentFormData {
   patientId: string;
   patientName: string;
   notes: string;
+  treatmentPlans: TreatmentPlan[];
   dentalCheckup: {
     oralHygiene: string;
     gingivalStatus: string;
@@ -65,6 +83,7 @@ const TreatmentFormScreen: React.FC = () => {
     patientId: patientId || '',
     patientName: '',
     notes: '',
+    treatmentPlans: [],
     dentalCheckup: {
       oralHygiene: 'Good',
       gingivalStatus: 'Healthy',
@@ -91,6 +110,17 @@ const TreatmentFormScreen: React.FC = () => {
   const [patientSearchQuery, setPatientSearchQuery] = useState('');
   const [filteredPatients, setFilteredPatients] = useState<Patient[]>([]);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [showTreatmentPlanModal, setShowTreatmentPlanModal] = useState(false);
+  const [selectedPlanIndex, setSelectedPlanIndex] = useState<number | null>(null);
+  const [planData, setPlanData] = useState<TreatmentPlan | null>(null);
+  const [activeTab, setActiveTab] = useState(0);
+  
+  const tabs = [
+    { id: 'patient', title: 'Patient', icon: 'person' },
+    { id: 'treatment', title: 'Treatment', icon: 'medical' },
+    { id: 'checkup', title: 'Checkup', icon: 'fitness' },
+    { id: 'diagnosis', title: 'Diagnosis', icon: 'document-text' },
+  ];
 
   // Treatment templates for quick selection
   const treatmentTemplates = {
@@ -174,6 +204,7 @@ const TreatmentFormScreen: React.FC = () => {
           treatmentPlan: '',
         },
         dentalIssues: treatment.dentalIssues || [],
+        treatmentPlans: treatment.treatmentPlans || [],
       });
     } catch (error) {
       console.error('Error fetching treatment:', error);
@@ -257,6 +288,73 @@ const TreatmentFormScreen: React.FC = () => {
     }));
   };
 
+  const handleAddTreatmentPlan = () => {
+    setSelectedPlanIndex(null);
+    setPlanData(null);
+    setShowTreatmentPlanModal(true);
+  };
+
+  const handleEditPlan = (plan: TreatmentPlan, index: number) => {
+    setSelectedPlanIndex(index);
+    setPlanData(plan);
+    setShowTreatmentPlanModal(true);
+  };
+
+  const handleSaveTreatmentPlan = (plan: TreatmentPlan) => {
+    if (selectedPlanIndex !== null) {
+      // Edit existing plan
+      setFormData(prev => ({
+        ...prev,
+        treatmentPlans: prev.treatmentPlans.map((p, index) => 
+          index === selectedPlanIndex ? plan : p
+        )
+      }));
+    } else {
+      // Add new plan
+      setFormData(prev => ({
+        ...prev,
+        treatmentPlans: [...prev.treatmentPlans, plan]
+      }));
+    }
+    setShowTreatmentPlanModal(false);
+    setSelectedPlanIndex(null);
+    setPlanData(null);
+  };
+
+  const handleDeleteTreatmentPlan = (index: number) => {
+    Alert.alert(
+      'Delete Treatment Plan',
+      'Are you sure you want to delete this treatment plan?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setFormData(prev => ({
+              ...prev,
+              treatmentPlans: prev.treatmentPlans.filter((_, i) => i !== index)
+            }));
+          }
+        }
+      ]
+    );
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'completed':
+        return theme.colors.success;
+      case 'in_progress':
+        return theme.colors.warning;
+      case 'cancelled':
+        return theme.colors.error;
+      case 'planned':
+      default:
+        return theme.colors.primary;
+    }
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Partial<TreatmentFormData> = {};
 
@@ -319,6 +417,122 @@ const TreatmentFormScreen: React.FC = () => {
     <View style={styles.inputGroup}>
       <Text style={styles.inputLabel}>{label}</Text>
       {children}
+    </View>
+  );
+
+  const renderTabNavigation = () => {
+    console.log('🔍 [TreatmentForm] Rendering tab navigation, activeTab:', activeTab);
+    return (
+      <View style={styles.tabContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabScrollContent}
+        >
+          {tabs.map((tab, index) => (
+            <TouchableOpacity
+              key={tab.id}
+              style={[
+                styles.tab,
+                activeTab === index && styles.activeTab
+              ]}
+              onPress={() => {
+                console.log('🔍 [TreatmentForm] Tab pressed:', tab.title, 'index:', index);
+                setActiveTab(index);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons 
+                name={tab.icon as any} 
+                size={20} 
+                color={activeTab === index ? theme.colors.white : theme.colors.text.secondary} 
+              />
+              <Text style={[
+                styles.tabText,
+                activeTab === index && styles.activeTabText
+              ]}>
+                {tab.title}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  const renderTabContent = () => {
+    console.log('🔍 [TreatmentForm] Rendering tab content for activeTab:', activeTab);
+    switch (activeTab) {
+      case 0:
+        console.log('🔍 [TreatmentForm] Rendering Patient tab');
+        return renderPatientInfo();
+      case 1:
+        console.log('🔍 [TreatmentForm] Rendering Treatment tab');
+        return (
+          <View>
+            {renderTreatmentPlans()}
+            {renderTreatmentDetails()}
+          </View>
+        );
+      case 2:
+        console.log('🔍 [TreatmentForm] Rendering Checkup tab');
+        return renderDentalCheckup();
+      case 3:
+        console.log('🔍 [TreatmentForm] Rendering Diagnosis tab');
+        return renderDiagnosis();
+      default:
+        console.log('🔍 [TreatmentForm] Rendering default Patient tab');
+        return renderPatientInfo();
+    }
+  };
+
+  const renderTabNavigationButtons = () => (
+    <View style={styles.tabNavigationButtons}>
+      <TouchableOpacity
+        style={[
+          styles.navButton,
+          activeTab === 0 && styles.navButtonDisabled
+        ]}
+        onPress={() => setActiveTab(Math.max(0, activeTab - 1))}
+        disabled={activeTab === 0}
+      >
+        <Ionicons 
+          name="chevron-back" 
+          size={20} 
+          color={activeTab === 0 ? theme.colors.text.disabled : theme.colors.primary} 
+        />
+        <Text style={[
+          styles.navButtonText,
+          activeTab === 0 && styles.navButtonTextDisabled
+        ]}>
+          Previous
+        </Text>
+      </TouchableOpacity>
+      
+      <Text style={styles.tabIndicator}>
+        {activeTab + 1} of {tabs.length}
+      </Text>
+      
+      <TouchableOpacity
+        style={[
+          styles.navButton,
+          activeTab === tabs.length - 1 && styles.navButtonDisabled
+        ]}
+        onPress={() => setActiveTab(Math.min(tabs.length - 1, activeTab + 1))}
+        disabled={activeTab === tabs.length - 1}
+      >
+        <Text style={[
+          styles.navButtonText,
+          activeTab === tabs.length - 1 && styles.navButtonTextDisabled
+        ]}>
+          Next
+        </Text>
+        <Ionicons 
+          name="chevron-forward" 
+          size={20} 
+          color={activeTab === tabs.length - 1 ? theme.colors.text.disabled : theme.colors.primary} 
+        />
+      </TouchableOpacity>
     </View>
   );
 
@@ -640,6 +854,147 @@ const TreatmentFormScreen: React.FC = () => {
     </Card>
   );
 
+  const renderTreatmentPlans = () => (
+    <View style={styles.treatmentPlansContainer}>
+      {/* Header with Quick Actions */}
+      <View style={styles.plansHeader}>
+        <View style={styles.plansHeaderLeft}>
+          <View style={styles.plansIconContainer}>
+            <Ionicons name="medical" size={24} color={theme.colors.primary} />
+          </View>
+          <View>
+            <Text style={styles.plansHeaderTitle}>Treatment Plans</Text>
+            <Text style={styles.plansHeaderSubtitle}>
+              {formData.treatmentPlans.length} plan{formData.treatmentPlans.length !== 1 ? 's' : ''}
+            </Text>
+          </View>
+        </View>
+        {formData.patientId && (
+          <TouchableOpacity
+            style={styles.quickAddButton}
+            onPress={handleAddTreatmentPlan}
+          >
+            <Ionicons name="add" size={20} color={theme.colors.white} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Content Area */}
+      {!formData.patientId ? (
+        <View style={styles.linkPatientCard}>
+          <View style={styles.linkPatientIcon}>
+            <Ionicons name="person-add" size={32} color={theme.colors.primary} />
+          </View>
+          <Text style={styles.linkPatientTitle}>Link Patient to Continue</Text>
+          <Text style={styles.linkPatientText}>
+            Connect a patient to start creating treatment plans
+          </Text>
+          <TouchableOpacity
+            style={styles.linkPatientButton}
+            onPress={() => setShowPatientModal(true)}
+          >
+            <Ionicons name="link" size={16} color={theme.colors.white} />
+            <Text style={styles.linkPatientButtonText}>Link Patient</Text>
+          </TouchableOpacity>
+        </View>
+      ) : formData.treatmentPlans.length === 0 ? (
+        <View style={styles.emptyPlansCard}>
+          <View style={styles.emptyPlansIcon}>
+            <Ionicons name="clipboard-outline" size={40} color={theme.colors.primary} />
+          </View>
+          <Text style={styles.emptyPlansTitle}>Ready to Create Plans</Text>
+          <Text style={styles.emptyPlansText}>
+            Start by creating your first treatment plan for {formData.patientName}
+          </Text>
+          <TouchableOpacity
+            style={styles.createFirstPlanButton}
+            onPress={handleAddTreatmentPlan}
+          >
+            <Ionicons name="add-circle" size={20} color={theme.colors.white} />
+            <Text style={styles.createFirstPlanButtonText}>Create First Plan</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.plansGrid}>
+          {formData.treatmentPlans.map((plan, index) => (
+            <TouchableOpacity
+              key={plan._id || index}
+              style={styles.planCard}
+              onPress={() => handleEditPlan(plan, index)}
+            >
+              <View style={styles.planCardHeader}>
+                <View style={styles.planCardIcon}>
+                  <Ionicons name="document-text" size={20} color={theme.colors.primary} />
+                </View>
+                <View style={styles.planCardActions}>
+                  <TouchableOpacity
+                    style={styles.planCardAction}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      handleEditPlan(plan, index);
+                    }}
+                  >
+                    <Ionicons name="create" size={14} color={theme.colors.text.secondary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.planCardAction}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      handleDeleteTreatmentPlan(index);
+                    }}
+                  >
+                    <Ionicons name="trash" size={14} color={theme.colors.error} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              
+              <Text style={styles.planCardName} numberOfLines={1}>
+                {plan.name || 'Untitled Plan'}
+              </Text>
+              
+              <View style={styles.planCardStatus}>
+                <View style={[
+                  styles.planStatusDot,
+                  { backgroundColor: getStatusColor(plan.status) }
+                ]} />
+                <Text style={styles.planStatusText}>
+                  {plan.status?.replace('_', ' ').toUpperCase() || 'PLANNED'}
+                </Text>
+              </View>
+              
+              {plan.startDate && (
+                <Text style={styles.planCardDate}>
+                  {new Date(plan.startDate).toLocaleDateString()}
+                </Text>
+              )}
+              
+              <View style={styles.planCardCosts}>
+                <View style={styles.planCardCostItem}>
+                  <Text style={styles.planCardCostLabel}>Total</Text>
+                  <Text style={styles.planCardCostValue}>₹{plan.totalCost || 0}</Text>
+                </View>
+                <View style={styles.planCardCostItem}>
+                  <Text style={styles.planCardCostLabel}>Materials</Text>
+                  <Text style={styles.planCardCostValue}>₹{plan.totalMaterialCost || 0}</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          ))}
+          
+          <TouchableOpacity
+            style={styles.addPlanCard}
+            onPress={handleAddTreatmentPlan}
+          >
+            <View style={styles.addPlanIcon}>
+              <Ionicons name="add" size={24} color={theme.colors.primary} />
+            </View>
+            <Text style={styles.addPlanText}>Add New Plan</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+
   const renderPatientModal = () => (
     <Modal
       visible={showPatientModal}
@@ -688,6 +1043,33 @@ const TreatmentFormScreen: React.FC = () => {
     </Modal>
   );
 
+  const renderTreatmentPlanModal = () => (
+    <Modal
+      visible={showTreatmentPlanModal}
+      animationType="slide"
+      presentationStyle="pageSheet"
+    >
+      <SafeAreaView style={styles.modalContainer}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>
+            {selectedPlanIndex !== null ? 'Edit Treatment Plan' : 'Add Treatment Plan'}
+          </Text>
+          <TouchableOpacity onPress={() => setShowTreatmentPlanModal(false)}>
+            <Ionicons name="close" size={24} color={theme.colors.text.primary} />
+          </TouchableOpacity>
+        </View>
+        
+        <ScrollView style={styles.modalContent}>
+          <TreatmentPlanForm
+            plan={planData}
+            onSave={handleSaveTreatmentPlan}
+            onCancel={() => setShowTreatmentPlanModal(false)}
+          />
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
@@ -704,12 +1086,16 @@ const TreatmentFormScreen: React.FC = () => {
         style={styles.keyboardContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          {renderPatientInfo()}
-          {renderTreatmentDetails()}
-          {renderDentalCheckup()}
-          {renderDiagnosis()}
-        </ScrollView>
+        <View style={styles.tabViewContainer}>
+          {renderTabNavigation()}
+          <View style={styles.debugContainer}>
+            <Text style={styles.debugText}>Current Tab: {tabs[activeTab]?.title} ({activeTab + 1}/{tabs.length})</Text>
+          </View>
+          <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+            {renderTabContent()}
+          </ScrollView>
+          {renderTabNavigationButtons()}
+        </View>
         
         {!isKeyboardVisible && (
           <FloatingActionButton
@@ -732,6 +1118,7 @@ const TreatmentFormScreen: React.FC = () => {
       </KeyboardAvoidingView>
       
       {renderPatientModal()}
+      {renderTreatmentPlanModal()}
     </SafeAreaView>
   );
 };
@@ -806,6 +1193,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colors.text.primary,
     backgroundColor: theme.colors.white,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    minHeight: 20,
   },
   inputError: {
     borderColor: theme.colors.error,
@@ -813,6 +1203,7 @@ const styles = StyleSheet.create({
   textArea: {
     height: 80,
     textAlignVertical: 'top',
+    includeFontPadding: false,
   },
   halfWidth: {
     flex: 1,
@@ -877,8 +1268,8 @@ const styles = StyleSheet.create({
   templateButtons: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: theme.spacing.sm,
-  },
+    // gap property not supported in React Native StyleSheet
+    },
   templateButton: {
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
@@ -896,8 +1287,8 @@ const styles = StyleSheet.create({
   statusContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: theme.spacing.sm,
-  },
+    // gap property not supported in React Native StyleSheet
+    },
   statusOption: {
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
@@ -923,8 +1314,8 @@ const styles = StyleSheet.create({
   selectContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: theme.spacing.sm,
-  },
+    // gap property not supported in React Native StyleSheet
+    },
   selectOption: {
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
@@ -1008,6 +1399,363 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.white,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
+  },
+  
+  // New Mobile-First Treatment Plans Styling
+  treatmentPlansContainer: {
+    margin: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+  },
+  
+  // Header
+  plansHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.md,
+  },
+  plansHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  plansIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: theme.spacing.md,
+  },
+  plansHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: theme.colors.text.primary,
+  },
+  plansHeaderSubtitle: {
+    fontSize: 14,
+    color: theme.colors.text.secondary,
+    marginTop: 2,
+  },
+  quickAddButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  // Link Patient Card
+  linkPatientCard: {
+    backgroundColor: theme.colors.white,
+    borderRadius: theme.spacing.borderRadius.lg,
+    padding: theme.spacing.xl,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  linkPatientIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: theme.colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.lg,
+  },
+  linkPatientTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.sm,
+    textAlign: 'center',
+  },
+  linkPatientText: {
+    fontSize: 14,
+    color: theme.colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: theme.spacing.xl,
+    lineHeight: 20,
+  },
+  linkPatientButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.spacing.borderRadius.md,
+  },
+  linkPatientButtonText: {
+    fontSize: 16,
+    color: theme.colors.white,
+    fontWeight: '500',
+    marginLeft: theme.spacing.sm,
+  },
+  
+  // Empty Plans Card
+  emptyPlansCard: {
+    backgroundColor: theme.colors.white,
+    borderRadius: theme.spacing.borderRadius.lg,
+    padding: theme.spacing.xl,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  emptyPlansIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: theme.colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.lg,
+  },
+  emptyPlansTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.sm,
+    textAlign: 'center',
+  },
+  emptyPlansText: {
+    fontSize: 14,
+    color: theme.colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: theme.spacing.xl,
+    lineHeight: 20,
+    paddingHorizontal: theme.spacing.md,
+  },
+  createFirstPlanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.spacing.borderRadius.md,
+  },
+  createFirstPlanButtonText: {
+    fontSize: 16,
+    color: theme.colors.white,
+    fontWeight: '500',
+    marginLeft: theme.spacing.sm,
+  },
+  
+  // Plans Grid
+  plansGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    // gap property not supported in React Native StyleSheet
+    },
+  planCard: {
+    width: '48%',
+    backgroundColor: theme.colors.white,
+    borderRadius: theme.spacing.borderRadius.lg,
+    padding: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  planCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
+  },
+  planCardIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  planCardActions: {
+    flexDirection: 'row',
+    // gap property not supported in React Native StyleSheet
+    },
+  planCardAction: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: theme.colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  planCardName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.sm,
+  },
+  planCardStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
+  },
+  planStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: theme.spacing.sm,
+  },
+  planStatusText: {
+    fontSize: 12,
+    color: theme.colors.text.secondary,
+    fontWeight: '500',
+  },
+  planCardDate: {
+    fontSize: 12,
+    color: theme.colors.text.secondary,
+    marginBottom: theme.spacing.md,
+  },
+  planCardCosts: {
+    // gap property not supported in React Native StyleSheet
+    },
+  planCardCostItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  planCardCostLabel: {
+    fontSize: 12,
+    color: theme.colors.text.secondary,
+  },
+  planCardCostValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.text.primary,
+  },
+  
+  // Add Plan Card
+  addPlanCard: {
+    width: '48%',
+    backgroundColor: theme.colors.white,
+    borderRadius: theme.spacing.borderRadius.lg,
+    padding: theme.spacing.md,
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 140,
+  },
+  addPlanIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: theme.colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
+  },
+  addPlanText: {
+    fontSize: 14,
+    color: theme.colors.primary,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  
+  modalContent: {
+    flex: 1,
+    padding: theme.spacing.lg,
+  },
+  
+  // Tab navigation styles
+  tabViewContainer: {
+    flex: 1,
+  },
+  tabContainer: {
+    backgroundColor: theme.colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderLight,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  tabScrollContent: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+  },
+  tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    marginRight: theme.spacing.sm,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.background,
+    minWidth: 100,
+    justifyContent: 'center',
+  },
+  activeTab: {
+    backgroundColor: theme.colors.primary,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: theme.colors.text.secondary,
+    marginLeft: theme.spacing.xs,
+  },
+  activeTabText: {
+    color: theme.colors.white,
+  },
+  
+  // Tab navigation button styles
+  tabNavigationButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    backgroundColor: theme.colors.white,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderLight,
+  },
+  navButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.background,
+  },
+  navButtonDisabled: {
+    backgroundColor: theme.colors.background,
+    opacity: 0.5,
+  },
+  navButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: theme.colors.primary,
+    marginHorizontal: theme.spacing.xs,
+  },
+  navButtonTextDisabled: {
+    color: theme.colors.text.disabled,
+  },
+  tabIndicator: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: theme.colors.text.secondary,
+  },
+  
+  // Debug styles
+  debugContainer: {
+    backgroundColor: theme.colors.primary + '20',
+    padding: theme.spacing.sm,
+    alignItems: 'center',
+  },
+  debugText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.primary,
   },
 });
 

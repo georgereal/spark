@@ -9,24 +9,25 @@ import {
   Modal,
   ScrollView,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { theme } from '../theme';
-import api, { Receivable } from '../services/api';
+import ApiService, { MSwipePayment } from '../services/api';
 import FloatingActionButton from '../components/FloatingActionButton';
 import { Card, Button } from '../components';
+import { formatCurrency } from '../utils/currency';
+import { getStatusColor, getStatusIcon } from '../utils/status';
 
-const ReceivablesListScreen: React.FC = () => {
-  const [receivables, setReceivables] = useState<Receivable[]>([]);
-  const [filteredReceivables, setFilteredReceivables] = useState<Receivable[]>([]);
+const MSwipePaymentsScreen: React.FC = () => {
+  const [payments, setPayments] = useState<MSwipePayment[]>([]);
+  const [filteredPayments, setFilteredPayments] = useState<MSwipePayment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [selectedReceivable, setSelectedReceivable] = useState<Receivable | null>(null);
+  const [selectedPayment, setSelectedPayment] = useState<MSwipePayment | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -34,19 +35,26 @@ const ReceivablesListScreen: React.FC = () => {
   const [amountFilter, setAmountFilter] = useState({ min: '', max: '' });
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 20, // Back to normal limit
+    limit: 20,
     total: 0,
     pages: 0,
     hasMore: true
   });
+  const [statistics, setStatistics] = useState({
+    total: 0,
+    mapped: 0,
+    pending: 0,
+    unmapped: 0
+  });
+  const [isInitialized, setIsInitialized] = useState(false);
   const navigation = useNavigation();
 
-  const fetchReceivables = async (page: number = 1, append: boolean = false) => {
+  const fetchPayments = async (page: number = 1, append: boolean = false) => {
     try {
       const params: any = {
         page,
         limit: pagination.limit,
-        sortBy: 'updatedAt',
+        sortBy: 'paymentDate',
         sortOrder: 'desc'
       };
 
@@ -65,20 +73,24 @@ const ReceivablesListScreen: React.FC = () => {
       }
 
       console.log('API params being sent:', params);
-      const data = await api.getReceivables(params);
-      console.log('Receivables data received:', data);
+      const data = await ApiService.getMSwipePayments(params);
+      console.log('mSwipe payments data received:', {
+        transactionsCount: data.transactions?.length || 0,
+        pagination: data.pagination,
+        append
+      });
       
-      const receivablesData = data.receivables || [];
+      const paymentsData = data.transactions || [];
       const paginationData = data.pagination || { page: 1, limit: 20, total: 0, pages: 0 };
       
       if (append) {
         // Append new data to existing data
-        setReceivables(prev => [...prev, ...receivablesData]);
-        setFilteredReceivables(prev => [...prev, ...receivablesData]);
+        setPayments(prev => [...prev, ...paymentsData]);
+        setFilteredPayments(prev => [...prev, ...paymentsData]);
       } else {
         // Replace existing data
-        setReceivables(receivablesData);
-        setFilteredReceivables(receivablesData);
+        setPayments(paymentsData);
+        setFilteredPayments(paymentsData);
       }
       
       setPagination({
@@ -88,16 +100,21 @@ const ReceivablesListScreen: React.FC = () => {
         pages: paginationData.pages,
         hasMore: paginationData.page < paginationData.pages
       });
+
+      // Load statistics if it's the first page
+      if (page === 1) {
+        fetchStatistics();
+      }
     } catch (error: any) {
-      console.error('Error fetching receivables:', error);
+      console.error('Error fetching mSwipe payments:', error);
       if (error.message?.includes('Authentication required')) {
         Alert.alert('Authentication Error', 'Please login again');
       } else {
-        Alert.alert('Error', 'Failed to fetch receivables. Please check your connection.');
+        Alert.alert('Error', 'Failed to fetch mSwipe payments. Please check your connection.');
       }
       if (!append) {
-        setReceivables([]);
-        setFilteredReceivables([]);
+        setPayments([]);
+        setFilteredPayments([]);
       }
     } finally {
       setIsLoading(false);
@@ -106,35 +123,60 @@ const ReceivablesListScreen: React.FC = () => {
     }
   };
 
+  const fetchStatistics = async () => {
+    try {
+      const response = await ApiService.getMSwipePayments({ limit: 1000 });
+      const allPayments = response.transactions || [];
+      
+      const stats = {
+        total: allPayments.length,
+        mapped: allPayments.filter(p => p.status === 'mapped' || p.status === 'bank_linked').length,
+        pending: allPayments.filter(p => p.status === 'pending').length,
+        unmapped: allPayments.filter(p => p.status === 'unmapped').length
+      };
+      
+      setStatistics(stats);
+    } catch (error) {
+      console.error('Error fetching statistics:', error);
+    }
+  };
+
   useEffect(() => {
-    fetchReceivables();
+    fetchPayments();
+    fetchStatistics();
+    setIsInitialized(true);
   }, []);
 
   // Handle filter changes by refetching data
   useEffect(() => {
-    // Only refetch if we're not in the initial loading state
-    if (!isLoading) {
+    // Only refetch if we're not in the initial loading state and component is initialized
+    if (!isLoading && isInitialized) {
       console.log('Filters changed, refetching data...', { searchQuery, statusFilter, amountFilter });
       // Reset pagination when filters change
       setPagination(prev => ({ ...prev, page: 1, hasMore: true }));
-      fetchReceivables(1, false);
+      fetchPayments(1, false);
     }
   }, [searchQuery, statusFilter, amountFilter]);
 
-  const loadMoreReceivables = async () => {
-    if (loadingMore || !pagination.hasMore) return;
+  const loadMorePayments = async () => {
+    if (loadingMore || !pagination.hasMore) {
+      console.log('Load more blocked:', { loadingMore, hasMore: pagination.hasMore });
+      return;
+    }
     
+    console.log('Loading more payments, current page:', pagination.page);
     setLoadingMore(true);
-    await fetchReceivables(pagination.page + 1, true);
+    const nextPage = pagination.page + 1;
+    await fetchPayments(nextPage, true);
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Paid':
+      case 'Success':
         return theme.colors.success;
       case 'Pending':
         return theme.colors.warning;
-      case 'Overdue':
+      case 'Failed':
         return theme.colors.error;
       case 'Cancelled':
         return theme.colors.text.secondary;
@@ -145,11 +187,11 @@ const ReceivablesListScreen: React.FC = () => {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'Paid':
+      case 'Success':
         return 'checkmark-circle';
       case 'Pending':
         return 'time';
-      case 'Overdue':
+      case 'Failed':
         return 'alert-circle';
       case 'Cancelled':
         return 'close-circle';
@@ -170,8 +212,8 @@ const ReceivablesListScreen: React.FC = () => {
     });
   };
 
-  const handleReceivablePress = (receivable: Receivable) => {
-    setSelectedReceivable(receivable);
+  const handlePaymentPress = (payment: MSwipePayment) => {
+    setSelectedPayment(payment);
     setShowDetailsModal(true);
   };
 
@@ -192,59 +234,139 @@ const ReceivablesListScreen: React.FC = () => {
   const onRefresh = () => {
     setRefreshing(true);
     setPagination(prev => ({ ...prev, page: 1, hasMore: true }));
-    fetchReceivables(1, false);
+    fetchPayments(1, false);
+    fetchStatistics();
   };
 
   const handleScroll = (event: any) => {
     const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
     const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 20;
     
+    console.log('Scroll check:', {
+      isCloseToBottom,
+      hasMore: pagination.hasMore,
+      loadingMore,
+      currentPage: pagination.page,
+      totalPages: pagination.pages,
+      totalItems: pagination.total
+    });
+    
     if (isCloseToBottom && pagination.hasMore && !loadingMore) {
-      loadMoreReceivables();
+      console.log('Loading more payments...');
+      loadMorePayments();
     }
   };
 
-  const renderReceivableIcon = (receivable: Receivable) => (
+  const renderPaymentIcon = (payment: MSwipePayment) => (
     <TouchableOpacity
-      key={receivable._id}
-      style={styles.receivableIconContainer}
-      onPress={() => handleReceivablePress(receivable)}
+      key={payment._id}
+      style={styles.paymentIconContainer}
+      onPress={() => handlePaymentPress(payment)}
       activeOpacity={0.7}
     >
-      <View style={[styles.receivableIcon, { backgroundColor: getStatusColor(receivable.status) + '20' }]}>
-        <Ionicons 
-          name={getStatusIcon(receivable.status) as any} 
-          size={32} 
-          color={getStatusColor(receivable.status)} 
-        />
+      <View style={[
+        styles.paymentSquare, 
+        { 
+          borderColor: getStatusColor(payment.status),
+          backgroundColor: payment.status === 'mapped' ? '#F0F8F0' : 
+                          payment.status === 'unmapped' ? '#FFF0F0' : 
+                          payment.status === 'pending' ? '#FFF8F0' : 
+                          payment.status === 'bank_linked' ? '#F0F8FF' : 'white'
+        }
+      ]}>
+        {/* Header with status indicator */}
+        <View style={styles.squareHeader}>
+          <View style={[styles.statusIndicator, { backgroundColor: getStatusColor(payment.status) }]} />
+          <Text style={styles.squareStatus} numberOfLines={1}>
+            {payment.status?.toUpperCase() || 'UNKNOWN'}
+          </Text>
+        </View>
+        
+        {/* Main content area */}
+        <View style={styles.squareContent}>
+          {/* Amount - most prominent */}
+          <Text style={styles.squareAmount} numberOfLines={1}>
+            {formatCurrency(payment.amount)}
+          </Text>
+          
+          {/* Merchant/Patient name */}
+          <Text style={styles.squareTitle} numberOfLines={2}>
+            {payment.merchantName || payment.patientName || 'mSwipe Payment'}
+          </Text>
+          
+          {/* Transaction details */}
+          <View style={styles.squareDetails}>
+            <Text style={styles.squareDetailText} numberOfLines={1}>
+              {payment.transactionId}
+            </Text>
+            {payment.cardType && (
+              <Text style={styles.squareDetailText} numberOfLines={1}>
+                {payment.cardType} ••••{payment.last4Digits}
+              </Text>
+            )}
+          </View>
+        </View>
+        
+        {/* Footer with date */}
+        <View style={styles.squareFooter}>
+          <Text style={styles.squareDate} numberOfLines={1}>
+            {new Date(payment.paymentDate).toLocaleDateString('en-IN', {
+              day: '2-digit',
+              month: '2-digit',
+              year: '2-digit'
+            })}
+          </Text>
+        </View>
       </View>
-      <Text style={styles.receivableIconTitle} numberOfLines={2}>
-        {receivable.patientId?.firstName && receivable.patientId?.lastName 
-          ? `${receivable.patientId.firstName} ${receivable.patientId.lastName}`
-          : 'Unknown Patient'}
-      </Text>
-      <Text style={styles.receivableIconAmount}>
-        {formatCurrency(receivable.amount)}
-      </Text>
-      <Text style={styles.receivableIconStatus}>
-        {receivable.status}
-      </Text>
     </TouchableOpacity>
+  );
+
+  const renderStatisticsCards = () => (
+    <View style={styles.statisticsContainer}>
+      <Text style={styles.statisticsTitle}>mSwipe Statistics</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statisticsScrollView}>
+        <View style={styles.statisticsCard}>
+          <Text style={styles.statisticsCardTitle}>Total</Text>
+          <Text style={styles.statisticsCardValue}>{statistics.total}</Text>
+          <Text style={styles.statisticsCardLabel}>Transactions</Text>
+        </View>
+        <View style={[styles.statisticsCard, { backgroundColor: '#E8F5E8' }]}>
+          <Text style={[styles.statisticsCardTitle, { color: '#2E7D32' }]}>Mapped</Text>
+          <Text style={[styles.statisticsCardValue, { color: '#2E7D32' }]}>{statistics.mapped}</Text>
+          <Text style={[styles.statisticsCardLabel, { color: '#2E7D32' }]}>Linked</Text>
+        </View>
+        <View style={[styles.statisticsCard, { backgroundColor: '#FFF3E0' }]}>
+          <Text style={[styles.statisticsCardTitle, { color: '#F57C00' }]}>Pending</Text>
+          <Text style={[styles.statisticsCardValue, { color: '#F57C00' }]}>{statistics.pending}</Text>
+          <Text style={[styles.statisticsCardLabel, { color: '#F57C00' }]}>Awaiting</Text>
+        </View>
+        <View style={[styles.statisticsCard, { backgroundColor: '#FFEBEE' }]}>
+          <Text style={[styles.statisticsCardTitle, { color: '#D32F2F' }]}>Unmapped</Text>
+          <Text style={[styles.statisticsCardValue, { color: '#D32F2F' }]}>{statistics.unmapped}</Text>
+          <Text style={[styles.statisticsCardLabel, { color: '#D32F2F' }]}>Unlinked</Text>
+        </View>
+      </ScrollView>
+    </View>
   );
 
   const renderIconGrid = () => (
     <View>
       <View style={styles.iconGrid}>
-        {filteredReceivables.map(renderReceivableIcon)}
+        {filteredPayments.map(renderPaymentIcon)}
       </View>
       {loadingMore && (
         <View style={styles.loadingMoreContainer}>
-          <Text style={styles.loadingMoreText}>Loading more receivables...</Text>
+          <View style={styles.loadingSpinner}>
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+            <Text style={styles.loadingMoreText}>Loading more payments...</Text>
+          </View>
         </View>
       )}
-      {!pagination.hasMore && filteredReceivables.length > 0 && (
+      {!pagination.hasMore && filteredPayments.length > 0 && (
         <View style={styles.endOfListContainer}>
-          <Text style={styles.endOfListText}>No more receivables to load</Text>
+          <Text style={styles.endOfListText}>
+            All {pagination.total} payments loaded
+          </Text>
         </View>
       )}
     </View>
@@ -252,18 +374,11 @@ const ReceivablesListScreen: React.FC = () => {
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Ionicons name="card-outline" size={64} color="#ccc" />
-      <Text style={styles.emptyStateTitle}>No Receivables Found</Text>
+      <Ionicons name="phone-portrait-outline" size={64} color="#ccc" />
+      <Text style={styles.emptyStateTitle}>No mSwipe Payments Found</Text>
       <Text style={styles.emptyStateSubtitle}>
-        Add your first receivable to get started
+        mSwipe payments will appear here
       </Text>
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => navigation.navigate('ReceivableForm')}
-      >
-        <Ionicons name="add" size={20} color="white" />
-        <Text style={styles.addButtonText}>Add Receivable</Text>
-      </TouchableOpacity>
     </View>
   );
 
@@ -276,7 +391,7 @@ const ReceivablesListScreen: React.FC = () => {
     >
       <SafeAreaView style={styles.modalContainer}>
         <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Receivable Details</Text>
+          <Text style={styles.modalTitle}>mSwipe Payment Details</Text>
           <TouchableOpacity
             style={styles.closeButton}
             onPress={() => setShowDetailsModal(false)}
@@ -285,68 +400,86 @@ const ReceivablesListScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
         
-        {selectedReceivable && (
+        {selectedPayment && (
           <ScrollView style={styles.modalContent}>
             <Card style={styles.detailsCard}>
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Patient:</Text>
+                <Text style={styles.detailLabel}>Customer:</Text>
                 <Text style={styles.detailValue}>
-                  {selectedReceivable.patientId?.firstName && selectedReceivable.patientId?.lastName 
-                    ? `${selectedReceivable.patientId.firstName} ${selectedReceivable.patientId.lastName}`
-                    : 'Unknown Patient'}
-                </Text>
-              </View>
-              
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Treatment:</Text>
-                <Text style={styles.detailValue}>
-                  {selectedReceivable.treatmentId?.name || 'Unknown Treatment'}
+                  {selectedPayment.customerName || 'N/A'}
                 </Text>
               </View>
               
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Amount:</Text>
                 <Text style={[styles.detailValue, styles.amountValue]}>
-                  {formatCurrency(selectedReceivable.amount)}
+                  {formatCurrency(selectedPayment.amount)}
                 </Text>
               </View>
               
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Status:</Text>
-                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(selectedReceivable.status) + '20' }]}>
+                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(selectedPayment.status) + '20' }]}>
                   <Ionicons 
-                    name={getStatusIcon(selectedReceivable.status) as any} 
+                    name={getStatusIcon(selectedPayment.status) as any} 
                     size={16} 
-                    color={getStatusColor(selectedReceivable.status)} 
+                    color={getStatusColor(selectedPayment.status)} 
                   />
-                  <Text style={[styles.statusText, { color: getStatusColor(selectedReceivable.status) }]}>
-                    {selectedReceivable.status}
+                  <Text style={[styles.statusText, { color: getStatusColor(selectedPayment.status) }]}>
+                    {selectedPayment.status?.toUpperCase() || 'UNKNOWN'}
                   </Text>
                 </View>
               </View>
               
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Due Date:</Text>
+                <Text style={styles.detailLabel}>Payment Date:</Text>
                 <Text style={styles.detailValue}>
-                  {formatDate(selectedReceivable.dueDate)}
+                  {formatDate(selectedPayment.paymentDate)}
                 </Text>
               </View>
+              
+              {selectedPayment.transactionId && (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Transaction ID:</Text>
+                  <Text style={styles.detailValue}>
+                    {selectedPayment.transactionId}
+                  </Text>
+                </View>
+              )}
+              
+              {selectedPayment.referenceNumber && (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Reference:</Text>
+                  <Text style={styles.detailValue}>
+                    {selectedPayment.referenceNumber}
+                  </Text>
+                </View>
+              )}
+              
+              {selectedPayment.merchantId && (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Merchant ID:</Text>
+                  <Text style={styles.detailValue}>
+                    {selectedPayment.merchantId}
+                  </Text>
+                </View>
+              )}
+              
+              {selectedPayment.notes && (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Notes:</Text>
+                  <Text style={styles.detailValue}>
+                    {selectedPayment.notes}
+                  </Text>
+                </View>
+              )}
             </Card>
             
             <View style={styles.modalActions}>
               <Button
-                title="Edit"
-                onPress={() => {
-                  setShowDetailsModal(false);
-                  navigation.navigate('ReceivableForm', { receivableId: selectedReceivable._id });
-                }}
-                style={styles.editButton}
-              />
-              <Button
                 title="Close"
                 onPress={() => setShowDetailsModal(false)}
                 style={styles.closeModalButton}
-                variant="outline"
               />
             </View>
           </ScrollView>
@@ -364,7 +497,7 @@ const ReceivablesListScreen: React.FC = () => {
     >
       <SafeAreaView style={styles.modalContainer}>
         <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Filter Receivables</Text>
+          <Text style={styles.modalTitle}>Filter mSwipe Payments</Text>
           <TouchableOpacity
             style={styles.closeButton}
             onPress={() => setShowFilterModal(false)}
@@ -378,14 +511,14 @@ const ReceivablesListScreen: React.FC = () => {
             <Text style={styles.filterSectionTitle}>Search</Text>
             <TextInput
               style={styles.searchInput}
-              placeholder="Search by patient name, treatment..."
+              placeholder="Search by patient name, transaction ID, reference..."
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
             
             <Text style={styles.filterSectionTitle}>Status</Text>
             <View style={styles.statusFilterContainer}>
-              {['all', 'Pending', 'Paid', 'Overdue', 'Cancelled'].map((status) => (
+              {['all', 'mapped', 'pending', 'unmapped', 'bank_linked'].map((status) => (
                 <TouchableOpacity
                   key={status}
                   style={[
@@ -398,7 +531,7 @@ const ReceivablesListScreen: React.FC = () => {
                     styles.statusFilterButtonText,
                     statusFilter === status && styles.statusFilterButtonTextActive
                   ]}>
-                    {status === 'all' ? 'All' : status}
+                    {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -427,7 +560,7 @@ const ReceivablesListScreen: React.FC = () => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <Text>Loading receivables...</Text>
+          <Text>Loading mSwipe payments...</Text>
         </View>
       </SafeAreaView>
     );
@@ -438,9 +571,9 @@ const ReceivablesListScreen: React.FC = () => {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.headerTextContainer}>
-            <Text style={styles.headerTitle}>Receivables</Text>
+            <Text style={styles.headerTitle}>mSwipe Payments</Text>
             <Text style={styles.headerSubtitle}>
-              {filteredReceivables.length} of {pagination.total} receivables
+              {filteredPayments.length} of {pagination.total} payments
             </Text>
           </View>
           <View style={styles.headerActions}>
@@ -450,15 +583,12 @@ const ReceivablesListScreen: React.FC = () => {
             >
               <Ionicons name="filter" size={20} color={theme.colors.primary} />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => navigation.navigate('ReceivableForm')}
-            >
-              <Ionicons name="add" size={20} color="white" />
-            </TouchableOpacity>
           </View>
         </View>
       </View>
+
+      {/* Statistics Cards */}
+      {renderStatisticsCards()}
 
       <ScrollView
         style={styles.content}
@@ -469,19 +599,12 @@ const ReceivablesListScreen: React.FC = () => {
         scrollEventThrottle={400}
         showsVerticalScrollIndicator={false}
       >
-        {filteredReceivables.length === 0 ? (
+        {filteredPayments.length === 0 ? (
           renderEmptyState()
         ) : (
           renderIconGrid()
         )}
       </ScrollView>
-      
-      {receivables.length > 0 && (
-        <FloatingActionButton
-          onPress={() => navigation.navigate('ReceivableForm')}
-          icon="add"
-        />
-      )}
 
       {renderDetailsModal()}
       {renderFilterModal()}
@@ -538,15 +661,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primaryLight + '20',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: theme.spacing.sm,
-  },
-  addButton: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 25,
-    width: 50,
-    height: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   content: {
     flex: 1,
@@ -556,49 +670,83 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
+    paddingHorizontal: theme.spacing.sm,
   },
-  receivableIconContainer: {
-    width: '30%',
-    alignItems: 'center',
-    marginBottom: theme.spacing.lg,
-    paddingVertical: theme.spacing.sm,
+  paymentIconContainer: {
+    width: '48%',
+    marginBottom: theme.spacing.md,
   },
-  receivableIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: theme.spacing.sm,
+  // New square design styles
+  paymentSquare: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    borderWidth: 2,
+    padding: theme.spacing.sm,
+    minHeight: 140,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
-  receivableIconTitle: {
-    ...theme.typography.caption,
-    color: theme.colors.text.primary,
-    textAlign: 'center',
-    fontSize: 12,
-    fontWeight: '500',
-    lineHeight: 16,
-    marginBottom: theme.spacing.xs,
+  squareHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
   },
-  receivableIconAmount: {
-    ...theme.typography.caption,
-    color: theme.colors.primary,
-    textAlign: 'center',
-    fontSize: 11,
+  statusIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: theme.spacing.xs,
+  },
+  squareStatus: {
+    fontSize: 10,
     fontWeight: '600',
-    marginBottom: theme.spacing.xs,
+    color: theme.colors.text.secondary,
+    flex: 1,
   },
-  receivableIconStatus: {
-    ...theme.typography.caption,
+  squareContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  squareAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.xs,
+    textAlign: 'center',
+  },
+  squareTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.xs,
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  squareDetails: {
+    marginTop: theme.spacing.xs,
+  },
+  squareDetailText: {
+    fontSize: 10,
     color: theme.colors.text.secondary,
     textAlign: 'center',
+    marginBottom: 2,
+  },
+  squareFooter: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    paddingTop: theme.spacing.xs,
+    marginTop: theme.spacing.sm,
+  },
+  squareDate: {
     fontSize: 10,
-    fontWeight: '400',
+    color: theme.colors.text.secondary,
+    textAlign: 'center',
   },
   statusBadge: {
     flexDirection: 'row',
@@ -635,11 +783,6 @@ const styles = StyleSheet.create({
     color: theme.colors.text.secondary,
     textAlign: 'center',
     marginBottom: 24,
-  },
-  addButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    marginLeft: 5,
   },
   // Modal styles
   modalContainer: {
@@ -694,22 +837,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: theme.colors.primary,
   },
-  remainingValue: {
-    fontWeight: '600',
-    color: theme.colors.warning,
-  },
   modalActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingTop: theme.spacing.lg,
-  },
-  editButton: {
-    flex: 1,
-    marginRight: theme.spacing.sm,
   },
   closeModalButton: {
     flex: 1,
-    marginLeft: theme.spacing.sm,
   },
   // Filter modal styles
   filterCard: {
@@ -770,10 +904,16 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
     alignItems: 'center',
   },
+  loadingSpinner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   loadingMoreText: {
     fontSize: 14,
     color: theme.colors.text.secondary,
     fontStyle: 'italic',
+    marginLeft: theme.spacing.sm,
   },
   endOfListContainer: {
     padding: theme.spacing.lg,
@@ -784,6 +924,56 @@ const styles = StyleSheet.create({
     color: theme.colors.text.secondary,
     fontStyle: 'italic',
   },
+  // Statistics styles
+  statisticsContainer: {
+    backgroundColor: theme.colors.background,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  statisticsTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.sm,
+  },
+  statisticsScrollView: {
+    marginHorizontal: -theme.spacing.md,
+  },
+  statisticsCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: theme.spacing.md,
+    marginHorizontal: theme.spacing.sm,
+    minWidth: 120,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  statisticsCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.xs,
+  },
+  statisticsCardValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.xs,
+  },
+  statisticsCardLabel: {
+    fontSize: 12,
+    color: theme.colors.text.secondary,
+    textAlign: 'center',
+  },
 });
 
-export default ReceivablesListScreen;
+export default MSwipePaymentsScreen;

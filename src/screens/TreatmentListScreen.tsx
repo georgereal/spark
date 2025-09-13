@@ -133,7 +133,7 @@ const TreatmentListScreen: React.FC = () => {
       </Text>
       <TouchableOpacity
         style={styles.addButton}
-        onPress={() => navigation.navigate('TreatmentForm')}
+        onPress={() => navigation.navigate('MobileTreatmentForm')}
       >
         <Ionicons name="add" size={20} color="white" />
         <Text style={styles.addButtonText}>Add Treatment</Text>
@@ -165,7 +165,7 @@ const TreatmentListScreen: React.FC = () => {
             </View>
             <TouchableOpacity
               style={styles.addButton}
-              onPress={() => navigation.navigate('TreatmentForm')}
+              onPress={() => navigation.navigate('MobileTreatmentForm')}
             >
               <Ionicons name="add" size={20} color="white" />
             </TouchableOpacity>
@@ -194,7 +194,7 @@ const TreatmentListScreen: React.FC = () => {
       
       {filteredTreatments.length > 0 && (
         <FloatingActionButton
-          onPress={() => navigation.navigate('TreatmentForm')}
+          onPress={() => navigation.navigate('MobileTreatmentForm')}
           icon="add"
         />
       )}
@@ -243,8 +243,8 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.sm,
-  },
+    // gap property not supported in React Native StyleSheet
+    },
   headerIconContainer: {
     width: 48,
     height: 48,

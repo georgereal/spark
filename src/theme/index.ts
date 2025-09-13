@@ -9,6 +9,10 @@ export const theme = {
   typography,
   spacing,
   components,
+  // Extract borderRadius from spacing for easier access
+  borderRadius: spacing.borderRadius,
+  // Extract shadow from spacing for easier access
+  shadow: spacing.shadow,
 };
 
 // Export individual modules for convenience

@@ -9,44 +9,48 @@ import {
   Modal,
   ScrollView,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { theme } from '../theme';
-import api, { Receivable } from '../services/api';
+import ApiService, { Payment, PaymentAnalytics } from '../services/api';
 import FloatingActionButton from '../components/FloatingActionButton';
 import { Card, Button } from '../components';
+import { formatCurrency } from '../utils/currency';
+import { getStatusColor, getStatusIcon, getMethodColor, getMethodIcon } from '../utils/status';
 
-const ReceivablesListScreen: React.FC = () => {
-  const [receivables, setReceivables] = useState<Receivable[]>([]);
-  const [filteredReceivables, setFilteredReceivables] = useState<Receivable[]>([]);
+const PaymentsListScreen: React.FC = () => {
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [filteredPayments, setFilteredPayments] = useState<Payment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [selectedReceivable, setSelectedReceivable] = useState<Receivable | null>(null);
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [methodFilter, setMethodFilter] = useState<string>('all');
   const [amountFilter, setAmountFilter] = useState({ min: '', max: '' });
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 20, // Back to normal limit
+    limit: 20,
     total: 0,
     pages: 0,
     hasMore: true
   });
+  const [analytics, setAnalytics] = useState<PaymentAnalytics[]>([]);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const navigation = useNavigation();
 
-  const fetchReceivables = async (page: number = 1, append: boolean = false) => {
+  const fetchPayments = async (page: number = 1, append: boolean = false) => {
     try {
       const params: any = {
         page,
         limit: pagination.limit,
-        sortBy: 'updatedAt',
+        sortBy: 'paymentDate',
         sortOrder: 'desc'
       };
 
@@ -57,6 +61,9 @@ const ReceivablesListScreen: React.FC = () => {
       if (statusFilter && statusFilter !== 'all') {
         params.status = statusFilter;
       }
+      if (methodFilter && methodFilter !== 'all') {
+        params.method = methodFilter;
+      }
       if (amountFilter.min && amountFilter.min.trim()) {
         params.minAmount = parseFloat(amountFilter.min);
       }
@@ -65,20 +72,20 @@ const ReceivablesListScreen: React.FC = () => {
       }
 
       console.log('API params being sent:', params);
-      const data = await api.getReceivables(params);
-      console.log('Receivables data received:', data);
+      const data = await ApiService.getPayments(params);
+      console.log('Payments data received:', data);
       
-      const receivablesData = data.receivables || [];
+      const paymentsData = data.payments || [];
       const paginationData = data.pagination || { page: 1, limit: 20, total: 0, pages: 0 };
       
       if (append) {
         // Append new data to existing data
-        setReceivables(prev => [...prev, ...receivablesData]);
-        setFilteredReceivables(prev => [...prev, ...receivablesData]);
+        setPayments(prev => [...prev, ...paymentsData]);
+        setFilteredPayments(prev => [...prev, ...paymentsData]);
       } else {
         // Replace existing data
-        setReceivables(receivablesData);
-        setFilteredReceivables(receivablesData);
+        setPayments(paymentsData);
+        setFilteredPayments(paymentsData);
       }
       
       setPagination({
@@ -89,15 +96,15 @@ const ReceivablesListScreen: React.FC = () => {
         hasMore: paginationData.page < paginationData.pages
       });
     } catch (error: any) {
-      console.error('Error fetching receivables:', error);
+      console.error('Error fetching payments:', error);
       if (error.message?.includes('Authentication required')) {
         Alert.alert('Authentication Error', 'Please login again');
       } else {
-        Alert.alert('Error', 'Failed to fetch receivables. Please check your connection.');
+        Alert.alert('Error', 'Failed to fetch payments. Please check your connection.');
       }
       if (!append) {
-        setReceivables([]);
-        setFilteredReceivables([]);
+        setPayments([]);
+        setFilteredPayments([]);
       }
     } finally {
       setIsLoading(false);
@@ -106,60 +113,47 @@ const ReceivablesListScreen: React.FC = () => {
     }
   };
 
+  const fetchAnalytics = async () => {
+    try {
+      setAnalyticsLoading(true);
+      const params: any = {};
+      
+      if (dateRange.start) params.startDate = dateRange.start;
+      if (dateRange.end) params.endDate = dateRange.end;
+      if (statusFilter !== 'all') params.status = statusFilter;
+      if (methodFilter !== 'all') params.paymentMethod = methodFilter;
+
+      const analyticsData = await ApiService.getPaymentAnalytics(params);
+      setAnalytics(analyticsData);
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetchReceivables();
+    fetchPayments();
+    fetchAnalytics();
   }, []);
 
   // Handle filter changes by refetching data
   useEffect(() => {
     // Only refetch if we're not in the initial loading state
     if (!isLoading) {
-      console.log('Filters changed, refetching data...', { searchQuery, statusFilter, amountFilter });
+      console.log('Filters changed, refetching data...', { searchQuery, statusFilter, methodFilter, amountFilter });
       // Reset pagination when filters change
       setPagination(prev => ({ ...prev, page: 1, hasMore: true }));
-      fetchReceivables(1, false);
+      fetchPayments(1, false);
+      fetchAnalytics();
     }
-  }, [searchQuery, statusFilter, amountFilter]);
+  }, [searchQuery, statusFilter, methodFilter, amountFilter, dateRange]);
 
-  const loadMoreReceivables = async () => {
+  const loadMorePayments = async () => {
     if (loadingMore || !pagination.hasMore) return;
     
     setLoadingMore(true);
-    await fetchReceivables(pagination.page + 1, true);
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Paid':
-        return theme.colors.success;
-      case 'Pending':
-        return theme.colors.warning;
-      case 'Overdue':
-        return theme.colors.error;
-      case 'Cancelled':
-        return theme.colors.text.secondary;
-      default:
-        return theme.colors.text.secondary;
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'Paid':
-        return 'checkmark-circle';
-      case 'Pending':
-        return 'time';
-      case 'Overdue':
-        return 'alert-circle';
-      case 'Cancelled':
-        return 'close-circle';
-      default:
-        return 'help-circle';
-    }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return `₹${amount.toLocaleString('en-IN')}`;
+    await fetchPayments(pagination.page + 1, true);
   };
 
   const formatDate = (dateString: string) => {
@@ -170,8 +164,8 @@ const ReceivablesListScreen: React.FC = () => {
     });
   };
 
-  const handleReceivablePress = (receivable: Receivable) => {
-    setSelectedReceivable(receivable);
+  const handlePaymentPress = (payment: Payment) => {
+    setSelectedPayment(payment);
     setShowDetailsModal(true);
   };
 
@@ -182,7 +176,9 @@ const ReceivablesListScreen: React.FC = () => {
   const handleClearFilters = () => {
     setSearchQuery('');
     setStatusFilter('all');
+    setMethodFilter('all');
     setAmountFilter({ min: '', max: '' });
+    setDateRange({ start: '', end: '' });
   };
 
   const applyFilters = () => {
@@ -192,7 +188,8 @@ const ReceivablesListScreen: React.FC = () => {
   const onRefresh = () => {
     setRefreshing(true);
     setPagination(prev => ({ ...prev, page: 1, hasMore: true }));
-    fetchReceivables(1, false);
+    fetchPayments(1, false);
+    fetchAnalytics();
   };
 
   const handleScroll = (event: any) => {
@@ -200,51 +197,103 @@ const ReceivablesListScreen: React.FC = () => {
     const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 20;
     
     if (isCloseToBottom && pagination.hasMore && !loadingMore) {
-      loadMoreReceivables();
+      loadMorePayments();
     }
   };
 
-  const renderReceivableIcon = (receivable: Receivable) => (
+  const renderPaymentIcon = (payment: Payment) => (
     <TouchableOpacity
-      key={receivable._id}
-      style={styles.receivableIconContainer}
-      onPress={() => handleReceivablePress(receivable)}
+      key={payment._id}
+      style={styles.paymentIconContainer}
+      onPress={() => handlePaymentPress(payment)}
       activeOpacity={0.7}
     >
-      <View style={[styles.receivableIcon, { backgroundColor: getStatusColor(receivable.status) + '20' }]}>
+      <View style={[styles.paymentIcon, { backgroundColor: getStatusColor(payment.status) + '20' }]}>
         <Ionicons 
-          name={getStatusIcon(receivable.status) as any} 
+          name={getMethodIcon(payment.method) as any} 
           size={32} 
-          color={getStatusColor(receivable.status)} 
+          color={getStatusColor(payment.status)} 
         />
       </View>
-      <Text style={styles.receivableIconTitle} numberOfLines={2}>
-        {receivable.patientId?.firstName && receivable.patientId?.lastName 
-          ? `${receivable.patientId.firstName} ${receivable.patientId.lastName}`
-          : 'Unknown Patient'}
+      <Text style={styles.paymentIconTitle} numberOfLines={2}>
+        {payment.treatmentName || 'Payment'}
       </Text>
-      <Text style={styles.receivableIconAmount}>
-        {formatCurrency(receivable.amount)}
+      <Text style={styles.paymentIconAmount}>
+        {formatCurrency(payment.amount)}
       </Text>
-      <Text style={styles.receivableIconStatus}>
-        {receivable.status}
+      <Text style={styles.paymentIconStatus}>
+        {payment.status}
       </Text>
     </TouchableOpacity>
   );
 
+  const renderSummaryCards = () => {
+    if (analyticsLoading) {
+      return (
+        <View style={styles.summaryContainer}>
+          <Text style={styles.summaryTitle}>Payment Summary</Text>
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Loading analytics...</Text>
+          </View>
+        </View>
+      );
+    }
+
+    if (analytics.length === 0) {
+      return (
+        <View style={styles.summaryContainer}>
+          <Text style={styles.summaryTitle}>Payment Summary</Text>
+          <View style={styles.noDataContainer}>
+            <Text style={styles.noDataText}>No analytics data available</Text>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.summaryContainer}>
+        <View style={styles.summaryHeader}>
+          <Text style={styles.summaryTitle}>Payment Summary</Text>
+          <TouchableOpacity onPress={fetchAnalytics} style={styles.refreshButton}>
+            <Ionicons name="refresh" size={20} color={theme.colors.primary} />
+          </TouchableOpacity>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.summaryScrollView}>
+          {analytics.map((method) => (
+            <View key={method._id} style={styles.summaryCard}>
+              <Text style={styles.summaryCardTitle}>{method._id}</Text>
+              <Text style={styles.summaryCardAmount}>{formatCurrency(method.totalAmount)}</Text>
+              <Text style={styles.summaryCardCount}>{method.totalCount} payments</Text>
+              <View style={styles.statusBreakdown}>
+                {method.paymentMethods.map((pm, index) => (
+                  <View key={index} style={styles.statusItem}>
+                    <View style={[styles.statusDot, { backgroundColor: getStatusColor(pm.status) }]} />
+                    <Text style={styles.statusText}>
+                      {pm.status}: {pm.count}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  };
+
   const renderIconGrid = () => (
     <View>
       <View style={styles.iconGrid}>
-        {filteredReceivables.map(renderReceivableIcon)}
+        {filteredPayments.map(renderPaymentIcon)}
       </View>
       {loadingMore && (
         <View style={styles.loadingMoreContainer}>
-          <Text style={styles.loadingMoreText}>Loading more receivables...</Text>
+          <Text style={styles.loadingMoreText}>Loading more payments...</Text>
         </View>
       )}
-      {!pagination.hasMore && filteredReceivables.length > 0 && (
+      {!pagination.hasMore && filteredPayments.length > 0 && (
         <View style={styles.endOfListContainer}>
-          <Text style={styles.endOfListText}>No more receivables to load</Text>
+          <Text style={styles.endOfListText}>No more payments to load</Text>
         </View>
       )}
     </View>
@@ -253,16 +302,16 @@ const ReceivablesListScreen: React.FC = () => {
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
       <Ionicons name="card-outline" size={64} color="#ccc" />
-      <Text style={styles.emptyStateTitle}>No Receivables Found</Text>
+      <Text style={styles.emptyStateTitle}>No Payments Found</Text>
       <Text style={styles.emptyStateSubtitle}>
-        Add your first receivable to get started
+        Add your first payment to get started
       </Text>
       <TouchableOpacity
         style={styles.addButton}
-        onPress={() => navigation.navigate('ReceivableForm')}
+        onPress={() => navigation.navigate('PaymentForm')}
       >
         <Ionicons name="add" size={20} color="white" />
-        <Text style={styles.addButtonText}>Add Receivable</Text>
+        <Text style={styles.addButtonText}>Add Payment</Text>
       </TouchableOpacity>
     </View>
   );
@@ -276,7 +325,7 @@ const ReceivablesListScreen: React.FC = () => {
     >
       <SafeAreaView style={styles.modalContainer}>
         <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Receivable Details</Text>
+          <Text style={styles.modalTitle}>Payment Details</Text>
           <TouchableOpacity
             style={styles.closeButton}
             onPress={() => setShowDetailsModal(false)}
@@ -285,50 +334,71 @@ const ReceivablesListScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
         
-        {selectedReceivable && (
+        {selectedPayment && (
           <ScrollView style={styles.modalContent}>
             <Card style={styles.detailsCard}>
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Patient:</Text>
-                <Text style={styles.detailValue}>
-                  {selectedReceivable.patientId?.firstName && selectedReceivable.patientId?.lastName 
-                    ? `${selectedReceivable.patientId.firstName} ${selectedReceivable.patientId.lastName}`
-                    : 'Unknown Patient'}
-                </Text>
-              </View>
-              
-              <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Treatment:</Text>
                 <Text style={styles.detailValue}>
-                  {selectedReceivable.treatmentId?.name || 'Unknown Treatment'}
+                  {selectedPayment.treatmentName || 'No treatment'}
                 </Text>
               </View>
               
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Amount:</Text>
                 <Text style={[styles.detailValue, styles.amountValue]}>
-                  {formatCurrency(selectedReceivable.amount)}
+                  {formatCurrency(selectedPayment.amount)}
                 </Text>
               </View>
               
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Status:</Text>
-                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(selectedReceivable.status) + '20' }]}>
+                <Text style={styles.detailLabel}>Method:</Text>
+                <View style={styles.methodContainer}>
                   <Ionicons 
-                    name={getStatusIcon(selectedReceivable.status) as any} 
+                    name={getMethodIcon(selectedPayment.method) as any} 
                     size={16} 
-                    color={getStatusColor(selectedReceivable.status)} 
+                    color={theme.colors.primary} 
                   />
-                  <Text style={[styles.statusText, { color: getStatusColor(selectedReceivable.status) }]}>
-                    {selectedReceivable.status}
+                  <Text style={styles.methodText}>
+                    {selectedPayment.method?.toUpperCase() || 'N/A'}
                   </Text>
                 </View>
               </View>
               
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Due Date:</Text>
+                <Text style={styles.detailLabel}>Status:</Text>
+                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(selectedPayment.status) + '20' }]}>
+                  <Ionicons 
+                    name={getStatusIcon(selectedPayment.status) as any} 
+                    size={16} 
+                    color={getStatusColor(selectedPayment.status)} 
+                  />
+                  <Text style={[styles.statusText, { color: getStatusColor(selectedPayment.status) }]}>
+                    {selectedPayment.status}
+                  </Text>
+                </View>
+              </View>
+              
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Payment Date:</Text>
                 <Text style={styles.detailValue}>
-                  {formatDate(selectedReceivable.dueDate)}
+                  {formatDate(selectedPayment.paymentDate)}
+                </Text>
+              </View>
+              
+              {selectedPayment.referenceNumber && (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Reference:</Text>
+                  <Text style={styles.detailValue}>
+                    {selectedPayment.referenceNumber}
+                  </Text>
+                </View>
+              )}
+              
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Reference:</Text>
+                <Text style={styles.detailValue}>
+                  {selectedPayment.referenceNumber || 'N/A'}
                 </Text>
               </View>
             </Card>
@@ -338,7 +408,7 @@ const ReceivablesListScreen: React.FC = () => {
                 title="Edit"
                 onPress={() => {
                   setShowDetailsModal(false);
-                  navigation.navigate('ReceivableForm', { receivableId: selectedReceivable._id });
+                  navigation.navigate('PaymentForm', { paymentId: selectedPayment._id });
                 }}
                 style={styles.editButton}
               />
@@ -364,7 +434,7 @@ const ReceivablesListScreen: React.FC = () => {
     >
       <SafeAreaView style={styles.modalContainer}>
         <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Filter Receivables</Text>
+          <Text style={styles.modalTitle}>Filter Payments</Text>
           <TouchableOpacity
             style={styles.closeButton}
             onPress={() => setShowFilterModal(false)}
@@ -378,14 +448,14 @@ const ReceivablesListScreen: React.FC = () => {
             <Text style={styles.filterSectionTitle}>Search</Text>
             <TextInput
               style={styles.searchInput}
-              placeholder="Search by patient name, treatment..."
+              placeholder="Search by description, reference..."
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
             
             <Text style={styles.filterSectionTitle}>Status</Text>
             <View style={styles.statusFilterContainer}>
-              {['all', 'Pending', 'Paid', 'Overdue', 'Cancelled'].map((status) => (
+              {['all', 'Completed', 'Pending', 'Failed', 'Cancelled'].map((status) => (
                 <TouchableOpacity
                   key={status}
                   style={[
@@ -402,6 +472,49 @@ const ReceivablesListScreen: React.FC = () => {
                   </Text>
                 </TouchableOpacity>
               ))}
+            </View>
+            
+            <Text style={styles.filterSectionTitle}>Payment Method</Text>
+            <View style={styles.statusFilterContainer}>
+              {['all', 'Cash', 'Card', 'UPI', 'NetBanking', 'Cheque'].map((method) => (
+                <TouchableOpacity
+                  key={method}
+                  style={[
+                    styles.statusFilterButton,
+                    methodFilter === method && styles.statusFilterButtonActive
+                  ]}
+                  onPress={() => setMethodFilter(method)}
+                >
+                  <Text style={[
+                    styles.statusFilterButtonText,
+                    methodFilter === method && styles.statusFilterButtonTextActive
+                  ]}>
+                    {method === 'all' ? 'All' : method}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            <Text style={styles.filterSectionTitle}>Date Range</Text>
+            <View style={styles.dateRangeContainer}>
+              <View style={styles.dateInputContainer}>
+                <Text style={styles.dateLabel}>Start Date</Text>
+                <TextInput
+                  style={styles.dateInput}
+                  placeholder="YYYY-MM-DD"
+                  value={dateRange.start}
+                  onChangeText={(text) => setDateRange(prev => ({ ...prev, start: text }))}
+                />
+              </View>
+              <View style={styles.dateInputContainer}>
+                <Text style={styles.dateLabel}>End Date</Text>
+                <TextInput
+                  style={styles.dateInput}
+                  placeholder="YYYY-MM-DD"
+                  value={dateRange.end}
+                  onChangeText={(text) => setDateRange(prev => ({ ...prev, end: text }))}
+                />
+              </View>
             </View>
           </Card>
           
@@ -427,7 +540,7 @@ const ReceivablesListScreen: React.FC = () => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <Text>Loading receivables...</Text>
+          <Text>Loading payments...</Text>
         </View>
       </SafeAreaView>
     );
@@ -438,9 +551,9 @@ const ReceivablesListScreen: React.FC = () => {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.headerTextContainer}>
-            <Text style={styles.headerTitle}>Receivables</Text>
+            <Text style={styles.headerTitle}>Payments</Text>
             <Text style={styles.headerSubtitle}>
-              {filteredReceivables.length} of {pagination.total} receivables
+              {filteredPayments.length} of {pagination.total} payments
             </Text>
           </View>
           <View style={styles.headerActions}>
@@ -452,13 +565,16 @@ const ReceivablesListScreen: React.FC = () => {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.addButton}
-              onPress={() => navigation.navigate('ReceivableForm')}
+              onPress={() => navigation.navigate('PaymentForm')}
             >
               <Ionicons name="add" size={20} color="white" />
             </TouchableOpacity>
           </View>
         </View>
       </View>
+
+      {/* Summary Cards */}
+      {renderSummaryCards()}
 
       <ScrollView
         style={styles.content}
@@ -469,16 +585,16 @@ const ReceivablesListScreen: React.FC = () => {
         scrollEventThrottle={400}
         showsVerticalScrollIndicator={false}
       >
-        {filteredReceivables.length === 0 ? (
+        {filteredPayments.length === 0 ? (
           renderEmptyState()
         ) : (
           renderIconGrid()
         )}
       </ScrollView>
       
-      {receivables.length > 0 && (
+      {payments.length > 0 && (
         <FloatingActionButton
-          onPress={() => navigation.navigate('ReceivableForm')}
+          onPress={() => navigation.navigate('PaymentForm')}
           icon="add"
         />
       )}
@@ -557,13 +673,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
-  receivableIconContainer: {
+  paymentIconContainer: {
     width: '30%',
     alignItems: 'center',
     marginBottom: theme.spacing.lg,
     paddingVertical: theme.spacing.sm,
   },
-  receivableIcon: {
+  paymentIcon: {
     width: 64,
     height: 64,
     borderRadius: 32,
@@ -576,7 +692,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  receivableIconTitle: {
+  paymentIconTitle: {
     ...theme.typography.caption,
     color: theme.colors.text.primary,
     textAlign: 'center',
@@ -585,7 +701,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginBottom: theme.spacing.xs,
   },
-  receivableIconAmount: {
+  paymentIconAmount: {
     ...theme.typography.caption,
     color: theme.colors.primary,
     textAlign: 'center',
@@ -593,7 +709,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: theme.spacing.xs,
   },
-  receivableIconStatus: {
+  paymentIconStatus: {
     ...theme.typography.caption,
     color: theme.colors.text.secondary,
     textAlign: 'center',
@@ -611,6 +727,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginLeft: theme.spacing.xs,
+  },
+  methodContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  methodText: {
+    fontSize: 14,
+    color: theme.colors.text.primary,
+    marginLeft: theme.spacing.xs,
+    fontWeight: '500',
   },
   loadingContainer: {
     flex: 1,
@@ -693,10 +819,6 @@ const styles = StyleSheet.create({
   amountValue: {
     fontWeight: '600',
     color: theme.colors.primary,
-  },
-  remainingValue: {
-    fontWeight: '600',
-    color: theme.colors.warning,
   },
   modalActions: {
     flexDirection: 'row',
@@ -784,6 +906,100 @@ const styles = StyleSheet.create({
     color: theme.colors.text.secondary,
     fontStyle: 'italic',
   },
+  // Summary styles
+  summaryContainer: {
+    backgroundColor: theme.colors.background,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
+  },
+  summaryTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: theme.colors.text.primary,
+  },
+  refreshButton: {
+    padding: theme.spacing.xs,
+  },
+  summaryScrollView: {
+    marginHorizontal: -theme.spacing.md,
+  },
+  summaryCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: theme.spacing.md,
+    marginHorizontal: theme.spacing.sm,
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  summaryCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.primary,
+    marginBottom: theme.spacing.xs,
+  },
+  summaryCardAmount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.xs,
+  },
+  summaryCardCount: {
+    fontSize: 14,
+    color: theme.colors.text.secondary,
+    marginBottom: theme.spacing.sm,
+  },
+  statusBreakdown: {
+    gap: theme.spacing.xs,
+  },
+  statusItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  // Date range styles
+  dateRangeContainer: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  dateInputContainer: {
+    flex: 1,
+  },
+  dateLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.xs,
+  },
+  dateInput: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 8,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.sm,
+    fontSize: 14,
+    color: theme.colors.text.primary,
+    backgroundColor: theme.colors.background,
+  },
 });
 
-export default ReceivablesListScreen;
+export default PaymentsListScreen;

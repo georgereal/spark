@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../theme';
-import { Button, Card, FloatingActionButton } from '../components';
+import { Button, Card } from '../components';
 import api, { Patient } from '../services/api';
 
 interface PatientFormData {
@@ -78,6 +78,14 @@ const PatientFormScreen: React.FC = () => {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
+  
+  const tabs = [
+    { id: 'personal', title: 'Personal', icon: 'person' },
+    { id: 'address', title: 'Address', icon: 'location' },
+    { id: 'emergency', title: 'Emergency', icon: 'call' },
+    { id: 'medical', title: 'Medical', icon: 'medical' },
+  ];
 
   useEffect(() => {
     if (patientId) {
@@ -234,6 +242,213 @@ const PatientFormScreen: React.FC = () => {
   const showDatePickerModal = () => {
     setShowDatePicker(true);
   };
+
+  const getTabCompletionStatus = (tabIndex: number) => {
+    switch (tabIndex) {
+      case 0: // Personal
+        return formData.firstName && formData.lastName && formData.phone;
+      case 1: // Address
+        return formData.address || formData.city || formData.state;
+      case 2: // Emergency
+        return formData.emergencyContact.name || formData.emergencyContact.phone;
+      case 3: // Medical
+        return formData.medicalHistory || formData.notes;
+      default:
+        return false;
+    }
+  };
+
+
+  const renderTabNavigation = () => (
+    <View style={styles.tabContainer}>
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabScrollContent}
+      >
+        {tabs.map((tab, index) => {
+          const isCompleted = getTabCompletionStatus(index);
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={[
+                styles.tab,
+                activeTab === index && styles.activeTab
+              ]}
+              onPress={() => setActiveTab(index)}
+              activeOpacity={0.7}
+            >
+              <Ionicons 
+                name={tab.icon as any} 
+                size={20} 
+                color={activeTab === index ? theme.colors.white : theme.colors.text.secondary} 
+              />
+              <Text style={[
+                styles.tabText,
+                activeTab === index && styles.activeTabText
+              ]}>
+                {tab.title}
+              </Text>
+              {isCompleted && (
+                <View style={styles.tabCompletionIndicator}>
+                  <Ionicons name="checkmark" size={12} color={theme.colors.white} />
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 0:
+        return renderPersonalInfo();
+      case 1:
+        return renderAddressInfo();
+      case 2:
+        return renderEmergencyInfo();
+      case 3:
+        return renderMedicalInfo();
+      default:
+        return renderPersonalInfo();
+    }
+  };
+
+  const renderTabNavigationButtons = () => (
+    <View style={styles.tabNavigationButtons}>
+      <TouchableOpacity
+        style={[
+          styles.navButton,
+          activeTab === 0 && styles.navButtonDisabled
+        ]}
+        onPress={() => setActiveTab(Math.max(0, activeTab - 1))}
+        disabled={activeTab === 0}
+        activeOpacity={0.7}
+      >
+        <Ionicons 
+          name="chevron-back" 
+          size={24} 
+          color={activeTab === 0 ? theme.colors.text.disabled : theme.colors.primary} 
+        />
+        <Text style={[
+          styles.navButtonText,
+          activeTab === 0 && styles.navButtonTextDisabled
+        ]}>
+          Previous
+        </Text>
+      </TouchableOpacity>
+
+      <Text style={styles.tabIndicator}>
+        {activeTab + 1} of {tabs.length}
+      </Text>
+
+      <TouchableOpacity
+        style={[
+          styles.navButton,
+          activeTab === tabs.length - 1 && styles.navButtonDisabled
+        ]}
+        onPress={() => setActiveTab(Math.min(tabs.length - 1, activeTab + 1))}
+        disabled={activeTab === tabs.length - 1}
+        activeOpacity={0.7}
+      >
+        <Text style={[
+          styles.navButtonText,
+          activeTab === tabs.length - 1 && styles.navButtonTextDisabled
+        ]}>
+          Next
+        </Text>
+        <Ionicons 
+          name="chevron-forward" 
+          size={24} 
+          color={activeTab === tabs.length - 1 ? theme.colors.text.disabled : theme.colors.primary} 
+        />
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderPersonalInfo = () => (
+    <Card style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Personal Information</Text>
+        <Text style={styles.requiredIndicator}>* Required fields</Text>
+      </View>
+      <View style={styles.sectionContent}>
+        <View style={styles.row}>
+          <View style={styles.halfWidth}>
+            {renderInput('First Name *', 'firstName', 'Enter first name')}
+          </View>
+          <View style={styles.halfWidth}>
+            {renderInput('Last Name *', 'lastName', 'Enter last name')}
+          </View>
+        </View>
+        
+        {renderInput('Email', 'email', 'Enter email address (optional)', 'email-address')}
+        {renderInput('Phone *', 'phone', 'Enter phone number', 'phone-pad')}
+        
+        {renderGenderSelector()}
+        
+        <Text style={styles.helperText}>
+          You can provide either date of birth or age - both are optional
+        </Text>
+        
+        {renderDatePicker()}
+        {renderInput('Age', 'age', 'Enter age (optional)', 'numeric')}
+        
+        {renderInput('Blood Group', 'bloodGroup', 'A+, B-, O+')}
+        {renderInput('Profession', 'profession', 'Enter profession')}
+      </View>
+    </Card>
+  );
+
+  const renderAddressInfo = () => (
+    <Card style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Address Information</Text>
+      </View>
+      <View style={styles.sectionContent}>
+        {renderInput('Address', 'address', 'Enter address')}
+        
+        <View style={styles.row}>
+          <View style={styles.halfWidth}>
+            {renderInput('City', 'city', 'Enter city')}
+          </View>
+          <View style={styles.halfWidth}>
+            {renderInput('State', 'state', 'Enter state')}
+          </View>
+        </View>
+        
+        {renderInput('ZIP Code', 'zipCode', 'Enter ZIP code', 'numeric')}
+        {renderInput('Office Address', 'officeAddress', 'Enter office address')}
+      </View>
+    </Card>
+  );
+
+  const renderEmergencyInfo = () => (
+    <Card style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Emergency Contact</Text>
+      </View>
+      <View style={styles.sectionContent}>
+        {renderEmergencyContactInput('Name', 'name', 'Enter emergency contact name')}
+        {renderEmergencyContactInput('Phone', 'phone', 'Enter emergency contact phone', 'phone-pad')}
+        {renderEmergencyContactSelector('Relationship', 'relationship')}
+      </View>
+    </Card>
+  );
+
+  const renderMedicalInfo = () => (
+    <Card style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Medical Information</Text>
+      </View>
+      <View style={styles.sectionContent}>
+        {renderInput('Medical History', 'medicalHistory', 'Enter medical history', 'default', true)}
+        {renderInput('Notes', 'notes', 'Enter additional notes', 'default', true)}
+      </View>
+    </Card>
+  );
 
   const renderDatePicker = () => (
     <View style={styles.inputGroup}>
@@ -403,8 +618,9 @@ const PatientFormScreen: React.FC = () => {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidingView}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <View style={styles.tabViewContainer}>
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.backButton}
@@ -415,122 +631,81 @@ const PatientFormScreen: React.FC = () => {
             <Text style={styles.headerTitle}>
               {isEditing ? 'Edit Patient' : 'Add New Patient'}
             </Text>
-            {isKeyboardVisible ? (
-              <TouchableOpacity
-                style={styles.headerSaveButton}
-                onPress={handleSubmit}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <Ionicons name="hourglass-outline" size={20} color={theme.colors.primary} />
-                ) : (
-                  <Ionicons name="checkmark" size={20} color={theme.colors.primary} />
-                )}
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.placeholder} />
-            )}
-          </View>
-
-          <View style={styles.formContainer}>
-            {/* Essential Information - Most Important Fields */}
-            <Card style={styles.section}>
-              <Text style={styles.sectionTitle}>Personal Information</Text>
-              
-              {renderInput('First Name *', 'firstName', 'Enter first name')}
-              {renderInput('Last Name *', 'lastName', 'Enter last name')}
-              {renderInput('Email', 'email', 'Enter email address (optional)', 'email-address')}
-              {renderInput('Phone *', 'phone', 'Enter phone number', 'phone-pad')}
-              
-              {renderGenderSelector()}
-              
-              <Text style={styles.helperText}>
-                You can provide either date of birth or age - both are optional
+            <TouchableOpacity
+              style={styles.headerSaveButton}
+              onPress={handleSubmit}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <Ionicons name="hourglass-outline" size={20} color={theme.colors.white} />
+              ) : (
+                <Ionicons name="checkmark" size={20} color={theme.colors.white} />
+              )}
+              <Text style={styles.headerSaveButtonText}>
+                {isLoading ? 'Saving...' : (isEditing ? 'Update' : 'Save')}
               </Text>
-              
-              {renderDatePicker()}
-              {renderInput('Age', 'age', 'Enter age (optional)', 'numeric')}
-              
-              <View style={styles.row}>
-                <View style={styles.halfWidth}>
-                  {renderInput('Blood Group', 'bloodGroup', 'A+, B-, O+')}
-                </View>
-                <View style={styles.halfWidth}>
-                  {renderInput('Profession', 'profession', 'Engineer, Doctor')}
-                </View>
-              </View>
-            </Card>
-
-            {/* Address Information */}
-            <Card style={styles.section}>
-              <Text style={styles.sectionTitle}>Address</Text>
-              
-              {renderInput('Address', 'address', 'Enter full address')}
-              
-              <View style={styles.row}>
-                <View style={styles.halfWidth}>
-                  {renderInput('City', 'city', 'Enter city')}
-                </View>
-                <View style={styles.halfWidth}>
-                  {renderInput('State', 'state', 'Enter state')}
-                </View>
-              </View>
-              
-              <View style={styles.row}>
-                <View style={styles.halfWidth}>
-                  {renderInput('ZIP Code', 'zipCode', 'Enter ZIP code')}
-                </View>
-                <View style={styles.halfWidth}>
-                  {renderInput('Office Address', 'officeAddress', 'Enter office address')}
-                </View>
-              </View>
-            </Card>
-
-            {/* Emergency Contact */}
-            <Card style={styles.section}>
-              <Text style={styles.sectionTitle}>Emergency Contact</Text>
-              
-              {renderEmergencyContactInput('Name', 'name', 'Enter emergency contact name')}
-              {renderEmergencyContactInput('Phone', 'phone', 'Enter emergency contact phone', 'phone-pad')}
-              {renderEmergencyContactSelector('Relationship', 'relationship')}
-            </Card>
-
-            {/* Medical Information */}
-            <Card style={styles.section}>
-              <Text style={styles.sectionTitle}>Medical Information</Text>
-              
-              {renderInput(
-                'Medical History',
-                'medicalHistory',
-                'Any medical conditions, allergies, or history',
-                'default',
-                true
-              )}
-
-              {renderInput(
-                'Notes',
-                'notes',
-                'Additional notes or comments',
-                'default',
-                true
-              )}
-            </Card>
-
-            {/* Bottom padding for floating button */}
-            <View style={styles.bottomPadding} />
+            </TouchableOpacity>
           </View>
-        </ScrollView>
+
+
+          {/* Tab Navigation */}
+          {renderTabNavigation()}
+          
+          {/* Tab Content */}
+          <ScrollView 
+            style={styles.scrollView} 
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.scrollContent}
+          >
+            {renderTabContent()}
+          </ScrollView>
+          
+          {/* Tab Navigation Buttons - Hide when keyboard is visible */}
+          {!isKeyboardVisible && renderTabNavigationButtons()}
+        </View>
       </KeyboardAvoidingView>
       
-      {/* Floating Save Button - Hide when keyboard is visible */}
-      {!isKeyboardVisible && (
-        <FloatingActionButton
-          onPress={handleSubmit}
-          loading={isLoading}
-          disabled={isLoading}
-          icon={isEditing ? "checkmark" : "add"}
-          label={isEditing ? "Update Patient" : "Add Patient"}
-        />
+      
+      {/* Floating Tab Navigation - Show when keyboard is visible */}
+      {isKeyboardVisible && (
+        <View style={styles.floatingTabNav}>
+          <TouchableOpacity
+            style={[
+              styles.floatingNavButton,
+              activeTab === 0 && styles.floatingNavButtonDisabled
+            ]}
+            onPress={() => setActiveTab(Math.max(0, activeTab - 1))}
+            disabled={activeTab === 0}
+            activeOpacity={0.7}
+          >
+            <Ionicons 
+              name="chevron-back" 
+              size={20} 
+              color={activeTab === 0 ? theme.colors.text.disabled : theme.colors.white} 
+            />
+          </TouchableOpacity>
+          
+          <Text style={styles.floatingTabIndicator}>
+            {activeTab + 1} of {tabs.length}
+          </Text>
+          
+          <TouchableOpacity
+            style={[
+              styles.floatingNavButton,
+              activeTab === tabs.length - 1 && styles.floatingNavButtonDisabled
+            ]}
+            onPress={() => setActiveTab(Math.min(tabs.length - 1, activeTab + 1))}
+            disabled={activeTab === tabs.length - 1}
+            activeOpacity={0.7}
+          >
+            <Ionicons 
+              name="chevron-forward" 
+              size={20} 
+              color={activeTab === tabs.length - 1 ? theme.colors.text.disabled : theme.colors.white} 
+            />
+          </TouchableOpacity>
+        </View>
       )}
     </SafeAreaView>
   );
@@ -546,6 +721,10 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: theme.spacing.xl,
   },
   loadingContainer: {
     flex: 1,
@@ -581,11 +760,23 @@ const styles = StyleSheet.create({
     width: 40,
   },
   headerSaveButton: {
-    padding: theme.spacing.sm,
-    borderRadius: theme.spacing.borderRadius.md,
-    backgroundColor: theme.colors.primaryLight + '20',
-    borderWidth: 1,
-    borderColor: theme.colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.primary,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  headerSaveButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.white,
+    marginLeft: theme.spacing.xs,
   },
   formContainer: {
     padding: theme.spacing.md,
@@ -600,6 +791,66 @@ const styles = StyleSheet.create({
     color: theme.colors.text.primary,
     marginBottom: theme.spacing.sm,
   },
+  
+  // New section-wise styles
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    backgroundColor: theme.colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderLight,
+  },
+  sectionHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  sectionIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: theme.spacing.sm,
+  },
+  requiredIndicator: {
+    color: theme.colors.error,
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: theme.spacing.xs,
+  },
+  sectionContent: {
+    padding: theme.spacing.md,
+  },
+  sectionHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sectionIconCompleted: {
+    backgroundColor: theme.colors.success,
+  },
+  sectionTitleCompleted: {
+    color: theme.colors.success,
+  },
+  completionBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: theme.colors.success,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: theme.spacing.sm,
+  },
+  completionText: {
+    color: theme.colors.white,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  
   helperText: {
     fontSize: 12,
     fontWeight: '400',
@@ -637,10 +888,13 @@ const styles = StyleSheet.create({
     color: theme.colors.text.primary,
     paddingVertical: theme.spacing.sm,
     minHeight: 20,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   multilineInput: {
     minHeight: 100,
     textAlignVertical: 'top',
+    includeFontPadding: false,
   },
   placeholderText: {
     color: theme.colors.text.hint,
@@ -686,7 +940,7 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    gap: theme.spacing.sm,
+    // gap property not supported in React Native StyleSheet
     marginBottom: theme.spacing.sm,
   },
   halfWidth: {
@@ -697,7 +951,7 @@ const styles = StyleSheet.create({
   },
   genderContainer: {
     flexDirection: 'row',
-    gap: theme.spacing.sm,
+    // gap property not supported in React Native StyleSheet
     marginTop: theme.spacing.xs,
   },
   genderOption: {
@@ -728,7 +982,7 @@ const styles = StyleSheet.create({
   relationshipContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: theme.spacing.sm,
+    // gap property not supported in React Native StyleSheet
     marginTop: theme.spacing.xs,
   },
   relationshipOption: {
@@ -762,6 +1016,134 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 100, // Space for floating button
+  },
+  
+  // Tab navigation styles
+  tabViewContainer: {
+    flex: 1,
+  },
+  tabContainer: {
+    backgroundColor: theme.colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderLight,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  tabScrollContent: {
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+  },
+  tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    marginHorizontal: theme.spacing.xs,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.background,
+    minWidth: 100,
+  },
+  activeTab: {
+    backgroundColor: theme.colors.primary,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: theme.colors.text.secondary,
+    marginLeft: theme.spacing.xs,
+  },
+  activeTabText: {
+    color: theme.colors.white,
+  },
+  tabCompletionIndicator: {
+    marginLeft: theme.spacing.xs,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: theme.colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabNavigationButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    backgroundColor: theme.colors.white,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderLight,
+  },
+  navButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.primary,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  navButtonDisabled: {
+    backgroundColor: theme.colors.background,
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+  navButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.white,
+    marginHorizontal: theme.spacing.sm,
+  },
+  navButtonTextDisabled: {
+    color: theme.colors.text.disabled,
+  },
+  tabIndicator: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: theme.colors.text.secondary,
+  },
+  
+  // Floating tab navigation styles
+  floatingTabNav: {
+    position: 'absolute',
+    bottom: 100, // Moved up to avoid interference with bottom navigation
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.lg,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  floatingNavButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floatingNavButtonDisabled: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  floatingTabIndicator: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.white,
   },
 });
 

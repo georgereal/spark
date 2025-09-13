@@ -15,13 +15,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { theme } from '../theme';
+import api from '../services/api';
 
 const LoginScreen: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const { login: setAuthUser } = useAuth();
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -30,9 +31,23 @@ const LoginScreen: React.FC = () => {
     }
 
     try {
+      console.log('🔐 [LOGIN] Starting login process...');
+      console.log('🔐 [LOGIN] Email:', email);
+      console.log('🔐 [LOGIN] Password length:', password.length);
+      
       setIsLoading(true);
-      await login(email, password);
+      
+      // Call the API service to login
+      const response = await api.login(email, password);
+      console.log('✅ [LOGIN] API login successful, setting auth user...');
+      
+      // Set the user in auth context
+      setAuthUser(response.user);
+      
+      console.log('✅ [LOGIN] Login process completed successfully!');
     } catch (error: any) {
+      console.error('❌ [LOGIN] Login failed:', error);
+      console.error('❌ [LOGIN] Error response:', error.response?.data);
       Alert.alert('Login Failed', error.response?.data?.message || 'Invalid credentials');
     } finally {
       setIsLoading(false);
@@ -213,6 +228,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: theme.colors.text.primary,
     paddingVertical: theme.spacing.md,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    minHeight: 20,
   },
   eyeIcon: {
     padding: theme.spacing.sm,

@@ -73,6 +73,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: theme.colors.text.primary,
     paddingVertical: 0,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    minHeight: 20,
   },
   clearButton: {
     marginLeft: theme.spacing.sm,

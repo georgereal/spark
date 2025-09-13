@@ -101,49 +101,58 @@ const PatientListScreen: React.FC = () => {
 
   const renderPatientItem = ({ item }: { item: Patient }) => (
     <TouchableOpacity
-      style={styles.patientCard}
-      onPress={() => navigation.navigate('PatientDetails', { patientId: item._id })}
+      style={styles.patientItem}
+      onPress={() => (navigation as any).navigate('PatientDetails', { patientId: item._id })}
+      activeOpacity={0.7}
     >
-      <View style={styles.patientInfo}>
-        <View style={styles.patientHeader}>
-          <Text style={styles.patientName}>{item.name}</Text>
-          <View style={styles.patientActions}>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => navigation.navigate('PatientForm', { patientId: item._id })}
-            >
-              <Ionicons name="pencil" size={16} color={theme.colors.primary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => handleDeletePatient(item._id, item.name)}
-            >
-              <Ionicons name="trash" size={16} color={theme.colors.error} />
-            </TouchableOpacity>
+      <View style={styles.patientAvatar}>
+        <Text style={styles.avatarText}>
+          {item.firstName?.charAt(0)?.toUpperCase()}{item.lastName?.charAt(0)?.toUpperCase()}
+        </Text>
+      </View>
+      
+      <View style={styles.patientContent}>
+        <View style={styles.patientMainInfo}>
+          <Text style={styles.patientName} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <View style={styles.patientMeta}>
+            {item.phone && (
+              <Text style={styles.patientPhone} numberOfLines={1}>
+                {item.phone}
+              </Text>
+            )}
+            {item.age && (
+              <Text style={styles.patientAge}>
+                • {item.age} years
+              </Text>
+            )}
           </View>
         </View>
         
-        <View style={styles.patientDetails}>
-          {item.phone && (
-            <View style={styles.detailRow}>
-              <Ionicons name="call" size={14} color="#666" />
-              <Text style={styles.detailText}>{item.phone}</Text>
-            </View>
-          )}
-          {item.email && (
-            <View style={styles.detailRow}>
-              <Ionicons name="mail" size={14} color="#666" />
-              <Text style={styles.detailText}>{item.email}</Text>
-            </View>
-          )}
-          {item.age && (
-            <View style={styles.detailRow}>
-              <Ionicons name="calendar" size={14} color="#666" />
-              <Text style={styles.detailText}>{item.age} years old</Text>
-            </View>
-          )}
+        <View style={styles.patientActions}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              (navigation as any).navigate('PatientForm', { patientId: item._id });
+            }}
+          >
+            <Ionicons name="pencil" size={18} color={theme.colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleDeletePatient(item._id, item.name || 'Unknown');
+            }}
+          >
+            <Ionicons name="trash" size={18} color={theme.colors.error} />
+          </TouchableOpacity>
         </View>
       </View>
+      
+      <Ionicons name="chevron-forward" size={20} color={theme.colors.text.secondary} />
     </TouchableOpacity>
   );
 
@@ -153,7 +162,7 @@ const PatientListScreen: React.FC = () => {
       title="No Patients Found"
       subtitle="Add your first patient to get started"
       buttonText="Add Patient"
-      onButtonPress={() => navigation.navigate('PatientForm')}
+      onButtonPress={() => (navigation as any).navigate('PatientForm')}
     />
   );
 
@@ -171,7 +180,7 @@ const PatientListScreen: React.FC = () => {
             </View>
             <TouchableOpacity
               style={styles.addButton}
-              onPress={() => navigation.navigate('PatientForm')}
+              onPress={() => (navigation as any).navigate('PatientForm')}
             >
               <Ionicons name="add" size={20} color="white" />
             </TouchableOpacity>
@@ -186,6 +195,19 @@ const PatientListScreen: React.FC = () => {
         onClear={handleClearSearch}
       />
 
+      {filteredPatients.length > 0 && (
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>
+            {filteredPatients.length} {filteredPatients.length === 1 ? 'Patient' : 'Patients'}
+          </Text>
+          {searchQuery && (
+            <Text style={styles.searchResults}>
+              Search results for "{searchQuery}"
+            </Text>
+          )}
+        </View>
+      )}
+
       <FlatList
         data={filteredPatients}
         keyExtractor={(item) => item._id}
@@ -196,11 +218,12 @@ const PatientListScreen: React.FC = () => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
       
       {filteredPatients.length > 0 && (
         <FloatingActionButton
-          onPress={() => navigation.navigate('PatientForm')}
+          onPress={() => (navigation as any).navigate('PatientForm')}
           icon="add"
         />
       )}
@@ -249,8 +272,8 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.sm,
-  },
+    // gap property not supported in React Native StyleSheet
+    },
   headerIconContainer: {
     width: 48,
     height: 48,
@@ -273,55 +296,111 @@ const styles = StyleSheet.create({
     marginLeft: theme.spacing.xs,
   },
   listContainer: {
-    padding: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  patientCard: {
-    ...theme.components.card.container,
-    marginBottom: theme.spacing.md,
-  },
-  patientInfo: {
-    flex: 1,
-  },
-  patientHeader: {
+  
+  // New mobile-friendly list item styles
+  patientItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing.sm,
+    backgroundColor: theme.colors.white,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.xs,
+    borderRadius: theme.borderRadius.md,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.primary,
+  },
+  patientAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: theme.spacing.md,
+  },
+  avatarText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.white,
+  },
+  patientContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  patientMainInfo: {
+    flex: 1,
+    marginRight: theme.spacing.sm,
   },
   patientName: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
-    lineHeight: 24,
     color: theme.colors.text.primary,
+    marginBottom: theme.spacing.xs,
+  },
+  patientMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  patientPhone: {
+    fontSize: 14,
+    color: theme.colors.text.secondary,
     flex: 1,
+  },
+  patientAge: {
+    fontSize: 14,
+    color: theme.colors.text.secondary,
+    marginLeft: theme.spacing.xs,
   },
   patientActions: {
     flexDirection: 'row',
-    gap: theme.spacing.xs,
+    alignItems: 'center',
+    marginRight: theme.spacing.sm,
   },
   actionButton: {
-    padding: theme.spacing.sm,
-    borderRadius: theme.spacing.borderRadius.sm,
-    backgroundColor: theme.colors.gray[100],
-  },
-  patientDetails: {
-    gap: theme.spacing.xs,
-  },
-  detailRow: {
-    flexDirection: 'row',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.background,
+    justifyContent: 'center',
     alignItems: 'center',
-  },
-  detailText: {
-    fontSize: 12,
-    fontWeight: '400',
-    lineHeight: 20,
-    color: theme.colors.text.secondary,
     marginLeft: theme.spacing.xs,
+  },
+  
+  // Section header styles
+  sectionHeader: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    backgroundColor: theme.colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderLight,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.text.primary,
+  },
+  searchResults: {
+    fontSize: 14,
+    color: theme.colors.text.secondary,
+    marginTop: theme.spacing.xs,
+  },
+  separator: {
+    height: theme.spacing.xs,
   },
   emptyState: {
     alignItems: 'center',

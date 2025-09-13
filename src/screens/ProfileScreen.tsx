@@ -1,11 +1,13 @@
-wimport React from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 
 const ProfileScreen: React.FC = () => {
   const { user, logout } = useAuth();
+  const navigation = useNavigation();
 
   const handleLogout = () => {
     Alert.alert(
@@ -43,6 +45,17 @@ const ProfileScreen: React.FC = () => {
           <Text style={styles.menuText}>Settings</Text>
           <Ionicons name="chevron-forward" size={20} color="#ccc" />
         </TouchableOpacity>
+
+        {(user?.role === 'admin' || user?.role === 'Admin') && (
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('Admin' as never)}
+          >
+            <Ionicons name="shield" size={24} color="#FF6B35" />
+            <Text style={styles.menuText}>Admin Panel</Text>
+            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity style={styles.menuItem}>
           <Ionicons name="help-circle" size={24} color="#666" />
